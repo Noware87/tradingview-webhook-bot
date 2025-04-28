@@ -1,8 +1,8 @@
-# TradingView Webhook Bot
+# TradingView Webhook Bot (Fixed Version)
 
-En enkel Flask-server som tar emot TradingView alerts och skriver ut dem.
+En enkel Flask-server som tar emot TradingView alerts och kan kopplas till Bitget.
 
 ## Instruktioner
 
-- Lägg in din server på Render eller Railway.
-- Koppla TradingView Webhook URL till `/webhook` endpointen.
+- Deploya till Render.
+- Se till att Webhook URL i TradingView pekar på din /webhook endpoint.
