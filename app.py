@@ -15,6 +15,9 @@ API_PASSPHRASE = os.getenv('BITGET_API_PASSPHRASE')
 
 BASE_URL = "https://api.bitget.com"
 
+# Globala variabler för att hålla koll på köp
+entry_prices = []
+
 def generate_signature(timestamp, method, request_path, body):
     prehash = str(timestamp) + method + request_path + body
     signature = hmac.new(API_SECRET.encode('utf-8'), prehash.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -70,24 +73,25 @@ def get_kaspa_balance():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
+    global entry_prices
     data = request.json
     side = data.get("side")
+    market_price = float(data.get("market_price", 0))  # TradingView skickar aktuellt pris
 
-    if side == "buy":
-        return place_order("KASPAUSDT", "buy", "quote", 5)
-    elif side == "partialsell":
+    if side == "buy_request":
+        # Köp för 10 USDT och lagra entry-priset
+        entry_prices.append(market_price)
+        return place_order("KASPAUSDT", "buy", "quote", 10)
+
+    elif side == "sell_request":
+        # Sälj 100% av KASPA-positionen
         balance = get_kaspa_balance()
         if balance > 0:
-            quantity_to_sell = balance * 0.30
-            return place_order("KASPAUSDT", "sell", "base", quantity_to_sell)
-        else:
-            return {"message": "No KASPA to sell for partial profit"}
-    elif side == "sell":
-        balance = get_kaspa_balance()
-        if balance > 0:
+            entry_prices = []  # Rensa efter försäljning
             return place_order("KASPAUSDT", "sell", "base", balance)
         else:
             return {"message": "No KASPA to sell"}
+
     else:
         return {"error": "Invalid side."}, 400
 
