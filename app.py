@@ -15,9 +15,6 @@ API_PASSPHRASE = os.getenv('BITGET_API_PASSPHRASE')
 
 BASE_URL = "https://api.bitget.com"
 
-# Globala variabler för att hålla koll på köp
-entry_prices = []
-
 def generate_signature(timestamp, method, request_path, body):
     prehash = str(timestamp) + method + request_path + body
     signature = hmac.new(API_SECRET.encode('utf-8'), prehash.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -35,6 +32,21 @@ def get_headers(timestamp, method, request_path, body):
     }
     return headers
 
+def get_kaspa_balance():
+    timestamp = int(time.time() * 1000)
+    request_path = "/api/spot/v1/account/assets"
+    url = BASE_URL + request_path
+    headers = get_headers(timestamp, "GET", request_path, "")
+    response = requests.get(url, headers=headers)
+    print("📦 Svar från Bitget (saldo):", response.json())
+    assets = response.json()
+
+    if assets['code'] == "00000":
+        for asset in assets['data']:
+            if asset['coinName'] == "KASPA":
+                return float(asset['available'])
+    return 0.0
+
 def place_order(symbol, side, quantity_type, quantity_value):
     timestamp = int(time.time() * 1000)
     request_path = "/api/spot/v1/trade/order"
@@ -44,7 +56,7 @@ def place_order(symbol, side, quantity_type, quantity_value):
         "symbol": symbol,
         "side": side,
         "orderType": "market",
-        "force": "gtc",
+        "force": "gtc"
     }
 
     if quantity_type == "quote":
@@ -54,46 +66,38 @@ def place_order(symbol, side, quantity_type, quantity_value):
 
     body = json.dumps(order)
     headers = get_headers(timestamp, "POST", request_path, body)
+    print("⚙️ Orderdata:", order)
     response = requests.post(url, headers=headers, data=body)
+    print("📨 Svar från Bitget:", response.json())
     return response.json()
-
-def get_kaspa_balance():
-    timestamp = int(time.time() * 1000)
-    request_path = "/api/spot/v1/account/assets"
-    url = BASE_URL + request_path
-    headers = get_headers(timestamp, "GET", request_path, "")
-    response = requests.get(url, headers=headers)
-    assets = response.json()
-
-    if assets['code'] == "00000":
-        for asset in assets['data']:
-            if asset['coinName'] == "KASPA":
-                return float(asset['available'])
-    return 0.0
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    global entry_prices
-    data = request.json
-    side = data.get("side")
-    market_price = float(data.get("market_price", 0))  # TradingView skickar aktuellt pris
+    try:
+        if request.is_json:
+            data = request.get_json()
+            print("✅ Mottagen JSON:", data)
+        else:
+            raw = request.data.decode('utf-8')
+            print("⚠️ Webbhook utan korrekt Content-Type. Rådata:", raw)
+            return {"error": "Invalid content type"}, 400
 
-    if side == "buy_request":
-        # Köp för 10 USDT och lagra entry-priset
-        entry_prices.append(market_price)
-        return place_order("KASPAUSDT", "buy", "quote", 10)
+        side = data.get("side")
 
-    elif side == "sell_request":
-        # Sälj 100% av KASPA-positionen
-        balance = get_kaspa_balance()
-        if balance > 0:
-            entry_prices = []  # Rensa efter försäljning
+        if side == "buy_request":
+            print("👉 Initierar köp...")
+            return place_order("KASPAUSDT", "buy", "quote", 10)
+        elif side == "sell_request":
+            print("👉 Initierar sälj...")
+            balance = get_kaspa_balance()
             return place_order("KASPAUSDT", "sell", "base", balance)
         else:
-            return {"message": "No KASPA to sell"}
+            print("❌ Ogiltig side:", side)
+            return {"error": "Invalid side"}, 400
 
-    else:
-        return {"error": "Invalid side."}, 400
+    except Exception as e:
+        print("🚨 Fel i webhook:", str(e))
+        return {"error": "Server error"}, 500
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 10000))
